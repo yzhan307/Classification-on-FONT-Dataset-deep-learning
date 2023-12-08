@@ -1,0 +1,283 @@
+---
+title: "final project"
+author: "Yi Zhang"
+date: "2022-11-29"
+output: word_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(e1071)
+library(randomForest)
+library("readxl")
+```
+
+```{r}
+getwd()
+setwd("C:/Users/Yi/Documents/R_files/6350files/final")
+data1=read.csv("class1.csv")
+data2=read_excel("C:/Users/Yi/Documents/R_files/6350files/final/class2.xlsx")
+data3=read.csv('class3.csv')
+data4=read.csv('class4.csv')
+
+data1n=na.omit(data1[,c(1,3:26)])    
+data2n=na.omit(data2[,c(1,3:26)])
+data3n=na.omit(data3[,c(1,3:26)])  
+data4n=na.omit(data4[,c(1,3:26)])
+
+s1<-dim(data1n)[1]
+s2<-dim(data2n)[1]
+s3<-dim(data3n)[1]
+s4<-dim(data4n)[1]
+
+N=s1+s2+s3+s4
+N
+
+size_table<-data.frame(
+  Class =c('class1','class2','class3','class4','total'),
+  Instances =c(s1,s2,s3,s4,N),
+  Percentage=c(round(s1/N*100,2),round(s2/N*100,2),round(s3/N*100,2),round(s4/N*100,2),'1')
+)
+size_table
+```
+## combine AND SCALE THE DATA
+```{r}
+DATA<-rbind(data1n,data2n,data3n,data4n)
+c<-c(1:24)
+for(i in c){
+  colnames(DATA)[i+1]<-paste('X',i,sep='')
+}
+DATA$Class<- as.factor(DATA$Class)
+
+means=colMeans(DATA[-1])
+SDS=sqrt(diag(var(DATA[-1])))
+RESF<-data.frame(TRU=DATA[,1])
+for (i in c){
+  RESF[,i+1]<-(DATA[,i+1]-means[i])/SDS[i]
+  colnames(RESF)[i+1]<-paste('X',i,sep='')
+}
+dim(RESF)
+```
+correclation
+```{r}
+cor_matrix<-cor(RESF[,2:25])
+eigen<-eigen(cor_matrix)
+eigen_value<-eigen$values
+plot(eigen_value,main='Eigen values',xlab ='variables',ylab = "Eigen Values",pch=19,col=2)
+```
+
+
+Split train and test set for each class.
+```{r}
+set.seed(123)
+CL1=RESF[RESF$TRU==1,]
+CL2=RESF[RESF$TRU==2,]
+CL3=RESF[RESF$TRU==3,]
+CL4=RESF[RESF$TRU==4,]
+
+train_index1=sample(1:s1,floor(0.85*s1))
+trainCL1=CL1[train_index1,]
+testCL1=CL1[-train_index1,]
+
+train_index2=sample(1:s2,floor(0.85*s2))
+trainCL2=CL2[train_index2,]
+testCL2=CL2[-train_index2,]
+
+train_index3=sample(1:s3,floor(0.85*s3))
+trainCL3=CL3[train_index3,]
+testCL3=CL3[-train_index3,]
+
+train_index4=sample(1:s4,floor(0.85*s4))
+trainCL4=CL4[train_index4,]
+testCL4=CL4[-train_index4,]
+
+train=rbind(trainCL1,trainCL2,trainCL3,trainCL4)
+test=rbind(testCL1,testCL2,testCL3,testCL4)
+
+xtrain=train[,2:25]
+ytrain=train[,1]
+xtest=test[,2:25]
+ytest=test[,1]
+```
+
+#differen ntree and parameters for random forest
+```{r}
+set.seed(12)
+C<-c(100,200,300,400,500)
+oob_value<-c()
+for (i in 1:5){
+  forest<-randomForest(ytrain~.,data=xtrain,ntree=C[i])
+  oob_value[i]<-round(forest$err.rate[nrow(forest$err.rate),1],4)
+}
+oob_value
+
+oob_table<-data.frame(ntree=c('100','200','300','400','500'),oob_value)
+oob_table
+```
+
+ntree=500 has the lowest oob value 0.029.
+#other parameters : mtry
+```{r}
+m<-c(3,4,5,6)
+oob_pa<-c()
+for (i in 1:4){
+  forest_p=randomForest(ytrain~.,data=xtrain,ntree=500,importance=T,mtry=m[i])
+  oob_pa[i]=round(forest_p$err.rate[nrow(forest_p$err.rate),1],4)
+}
+oob_pa
+oob_table<-data.frame(mtry=c('3','4','5','6'),oob_pa)
+oob_table
+```
+when ntree =500, mtry=5 get the lowest oob  error value. which is 0.028.
+
+try different value of nodes.
+nodesize  controls the length of each tree. The  default value 1 tends to  facilitate overfit, so it is often worth trying nodesize =1,2,3.
+
+```{r}
+
+node<-c(1,2,3)
+oob_node<-c()
+for (i in 1:3){
+  forest_node=randomForest(ytrain~.,data=xtrain,ntree=500,mtry=5,nodesize=node[i])
+  oob_node[i]=round(forest_node$err.rate[nrow(forest_node$err.rate),1],4)
+}
+oob_node
+oob_node_table<-data.frame(node_size=c('1','2','3'),oob_node)
+oob_node_table
+```
+
+
+
+train model randomforest with best pparameter ntree=500, mtry=5.
+```{r}
+forest1=randomForest(ytrain~.,data=xtrain,ntree=500,mtry=5,nodesize=3)
+oob1=forest1$err.rate[nrow(forest1$err.rate),1]
+oob1=round(oob1,4)
+oob1
+
+predict1_train<-predict(forest1,xtrain)
+Acc_train<-sum(predict1_train==ytrain)/length(ytrain)
+Acc_train
+
+confusion_matrix_train<-table(ytrain,predict1_train)
+confusion_matrix_train
+
+cfm_train_per<-matrix(nrow=4,ncol=4)
+for (i in 1:4){
+  for (j in 1:4){
+    cfm_train_per[i,j]<-round(confusion_matrix_train[i,j]/sum(confusion_matrix_train[i,]),4)
+  }
+}
+cfm_train_per
+```
+
+```{r}
+y_predict = predict(forest1, newdata = xtest )
+confusion_matrix_test = table(ytest, y_predict)
+print('confusion matrix for test set')
+confusion_matrix_test
+
+cfm_test_per<-matrix(nrow=4,ncol=4)
+for (i in 1:4){
+  for (j in 1:4){
+    cfm_test_per[i,j]<-round(confusion_matrix_test[i,j]/sum(confusion_matrix_test[i,]),4)
+  }
+}
+cfm_test_per
+Test_ACC = round((sum(diag(confusion_matrix_test))/length(ytest)),4)
+Test_ACC
+```
+compare oob accuracy on training set and test accuracy 
+oob error rate for training set is 0.0287, it means that 2.87% of the out of bag samples are incorectly classified, which means that 97.13% of the out of bag samples are correctly classified. 
+test accuracy is 0.9701, it means that 97.01% of the test set data are correctly classified. Test accuracy is very close to the rate of correctly classified out of bag sample. 
+
+```{r}
+compare<-data.frame(oob_rate=oob1,Test_ACC)
+compare
+```
+#SVM:choose two class and apply svm.
+#class2 has coefficient 0.9813 and class 4 has 0.9793, these two classes can be applied in support vector machine algorithm .
+ 
+```{r}
+trainSVM<-rbind(trainCL2,trainCL4)
+testSVM<-rbind(testCL2,testCL4)
+xtrainSVM<-trainSVM[,2:25]
+ytrainSVM<-trainSVM[,1]
+xtestSVM<-testSVM[,2:25]
+ytestSVM<-testSVM[,1]
+
+#y=as.numeric(ytrainSVM)
+#yn=as.factor(y)
+C<-c(0.01,0.1,1,10,100)
+G<-c(1/2/dim(xtrainSVM)[1], 1/dim(xtrainSVM)[1], 10/dim(xtrainSVM)[1])
+
+acc_train_svm<-matrix(nrow=5,ncol=3)
+acc_test_svm<-matrix(nrow=5,ncol=3)
+svp<-matrix(nrow=5,ncol=3)
+
+for(i in 1:5){
+  for (j in 1:3){
+  model<-svm(ytrainSVM~.,xtrainSVM,kernal='radial',cost=C[i],gamma=G[j])
+  
+  pred_train<-predict(model,xtrainSVM)
+  acc_train_svm[i,j]<-sum(pred_train==ytrainSVM)/length(ytrainSVM)
+  
+  pred_test<-predict(model,xtestSVM)
+  acc_test_svm[i,j]<-sum(pred_test==ytestSVM)/length(ytestSVM)
+  
+  svp[i,j]<-dim(model$SV)[1]/length(ytrainSVM)
+  }
+}
+acc_train_svm
+acc_test_svm
+svp
+
+```
+# add plots
+```{r}
+#gamma =1 x is cost values and y is value :three lines train, test, svp 
+plot(C,acc_train_svm[,1],type="o", col="blue", pch="o",  lty=1,ylim=c(0.1,1.3),xlab='Cost',ylab='',main='trainAcc,testACC,SVP vs Cost(Gamma=7.604563e-05)')
+lines(C,acc_test_svm[,1],col="red",lty=2)
+points(C,acc_test_svm[,1],col="red", pch="*")
+lines(C,svp[,1],col="dark red",lty=3)
+points(C,svp[,1],col="dark red", pch="+")
+legend(1,1.3,legend=c("trainAcc","testAcc","supporte vector percent"), col=c("blue","red","dark red"),
+                                  pch=c("o","*","+"),lty=c(1,2,3), ncol=1)
+
+```
+```{r}
+plot(C,acc_train_svm[,2],type="o", col="blue", pch="o",  lty=1,ylim=c(0.1,1.3),xlab='Cost',ylab='',main='trainAcc,testACC,SVP vs Cost(Gamma=0.0001520913)')
+lines(C,acc_test_svm[,2],col="red",lty=2)
+points(C,acc_test_svm[,2],col="red", pch="*")
+lines(C,svp[,2],col="dark red",lty=3)
+points(C,svp[,2],col="dark red", pch="+")
+legend(1,1.3,legend=c("trainAcc","testAcc","supporte vector percent"), col=c("blue","red","dark red"),
+                                  pch=c("o","*","+"),lty=c(1,2,3), ncol=1)
+```
+
+```{r}
+plot(C,acc_train_svm[,3],type="o", col="blue", pch="o",  lty=1,ylim=c(0.1,1.4),xlab='Cost', ylab='',main='trainAcc,testACC,SVP vs Cost(Gamma=0.001520913)')
+lines(C,acc_test_svm[,3],col="red",lty=2)
+points(C,acc_test_svm[,3],col="red", pch="*")
+lines(C,svp[,3],col="dark red",lty=3)
+points(C,svp[,3],col="dark red", pch="+")
+legend(1,1.4,legend=c("trainAcc","testAcc","supporte vector percent"), col=c("blue","red","dark red"),
+                                  pch=c("o","*","+"),lty=c(1,2,3), ncol=1)
+```
+```{r}
+model2<-svm(ytrainSVM~.,xtrainSVM,kernal='radial',cost=100,gamma=10/dim(xtrainSVM)[1])
+pred_train2<-predict(model2,xtrainSVM)
+acc_train_svm2<-sum(pred_train2==ytrainSVM)/length(ytrainSVM)
+pred_test2<-predict(model2,xtestSVM)
+acc_test_svm2<-sum(pred_test2==ytestSVM)/length(ytestSVM)
+acc_train_svm2
+acc_test_svm2
+sv=dim(model2$SV)[1]/length(ytrainSVM)
+sv
+```
+
